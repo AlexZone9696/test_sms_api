@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>SMSHub Клон</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h2>SMSHub Clone</h2>
+        <div id="info">Загрузка...</div>
+        <button onclick="getNumber()">Получить номер</button>
+        <button onclick="getOrders()">История</button>
+        <button onclick="payTON()">Пополнить через TON</button>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const user = window.Telegram.WebApp.initDataUnsafe.user;
+
+        fetch('/auth', {
+            method: 'POST',
+            body: new URLSearchParams({ id: user.id, username: user.username })
+        }).then(res => res.json())
+          .then(data => {
+              document.getElementById('info').innerText = `@${user.username} | Баланс: ${data.balance.toFixed(2)}$`;
+              if (data.is_admin) {
+                  document.getElementById('info').innerHTML += ` | <a href="/admin" target="_blank">Админ</a>`;
+              }
+          });
+
+        function getNumber() {
+            fetch('/get_number', {
+                method: 'POST',
+                body: new URLSearchParams({ service: 'tg', country: '0' })
+            }).then(res => res.json())
+              .then(data => {
+                if (data.number) {
+                    document.getElementById('output').innerText = `Ваш номер: ${data.number}`;
+                } else alert(data.error);
+            });
+        }
+
+        function getOrders() {
+            fetch('/orders').then(res => res.json())
+            .then(data => {
+                let html = '<h3>История:</h3>';
+                data.forEach(o => {
+                    html += `Номер: ${o.number}, Код: ${o.code || '...'}, Статус: ${o.status}<br>`;
+                });
+                document.getElementById('output').innerHTML = html;
+            });
+        }
+
+        function payTON() {
+            const wallet = "{{ ton_address }}";
+            const amount = 0.5;
+            const url = `https://tonkeeper.com/transfer/${wallet}?amount=${amount}&text=Topup`;
+            window.open(url, '_blank');
+        }
+    </script>
+</body>
+</html>
