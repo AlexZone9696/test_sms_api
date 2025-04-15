@@ -1,15 +1,19 @@
 from flask import Flask, render_template, request, session, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
-import requests, time, json
-from os import path
+import requests, time, json, os
 
 app = Flask(__name__)
 app.secret_key = 'секретный_ключ'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tmp/database.db'
 db = SQLAlchemy(app)
 
-API_KEY = 'ВАШ_API_KEY_ОТ_SMSHUB'
-BASE_URL = 'https://smshub.org/stubs/handler_api.php'
+API_KEY = 'ВАШ_API_КЛЮЧ_ОТ_SMSHUB'
+
+if not os.path.exists('tmp'):
+    os.makedirs('tmp')
+if not os.path.exists('tmp/database.db'):
+    with app.app_context():
+        db.create_all()
 
 with open('ton_config.json') as f:
     TON_CONFIG = json.load(f)
@@ -30,13 +34,6 @@ class Order(db.Model):
     sms_code = db.Column(db.String(20))
     status = db.Column(db.String(20))
     date = db.Column(db.String(20))
-
-@app.before_request
-def load_user():
-    if 'user_id' in session:
-        user = User.query.get(session['user_id'])
-        if user:
-            session['balance'] = user.balance
 
 @app.route('/')
 def index():
@@ -69,13 +66,9 @@ def get_number():
         return jsonify({'error': 'not_authenticated'})
     service = request.form['service']
     country = request.form['country']
-    params = {
-        'api_key': API_KEY,
-        'action': 'getNumber',
-        'service': service,
-        'country': country
-    }
-    r = requests.get(BASE_URL, params=params).text
+    r = requests.get('https://smshub.org/stubs/handler_api.php', params={
+        'api_key': API_KEY, 'action': 'getNumber', 'service': service, 'country': country
+    }).text
     if r.startswith('ACCESS_NUMBER'):
         _, id_request, number = r.split(':')
         order = Order(user_id=session['user_id'], service=service, number=number, sms_code='', status='WAIT', date=time.strftime('%Y-%m-%d %H:%M:%S'))
@@ -89,7 +82,9 @@ def get_number():
 def get_sms():
     id_request = request.form['id']
     for _ in range(10):
-        r = requests.get(BASE_URL, params={'api_key': API_KEY, 'action': 'getStatus', 'id': id_request}).text
+        r = requests.get('https://smshub.org/stubs/handler_api.php', params={
+            'api_key': API_KEY, 'action': 'getStatus', 'id': id_request
+        }).text
         if r.startswith('STATUS_OK'):
             code = r.split(':')[1]
             order = Order.query.filter_by(user_id=session['user_id']).order_by(Order.id.desc()).first()
@@ -98,7 +93,7 @@ def get_sms():
             db.session.commit()
             return jsonify({'code': code})
         elif r == 'STATUS_WAIT_CODE':
-            time.sleep(3)
+            time.sleep(2)
         else:
             return jsonify({'error': r})
     return jsonify({'error': 'Timeout'})
@@ -106,24 +101,15 @@ def get_sms():
 @app.route('/orders')
 def orders():
     orders = Order.query.filter_by(user_id=session.get('user_id')).order_by(Order.id.desc()).all()
-    return jsonify([{ 'service': o.service, 'number': o.number, 'status': o.status, 'code': o.sms_code, 'date': o.date } for o in orders])
+    return jsonify([{
+        'service': o.service, 'number': o.number, 'status': o.status,
+        'code': o.sms_code, 'date': o.date
+    } for o in orders])
 
 @app.route('/add_balance', methods=['POST'])
 def add_balance():
-    # Проверка вручную, т.к. TON не поддерживает нотификации напрямую
     user = User.query.get(session['user_id'])
     amount = float(request.form['amount'])
     user.balance += amount
     db.session.commit()
     return jsonify({'new_balance': user.balance})
-
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    return send_from_directory('static', filename)
-
-# Инициализация базы при первом запуске
-if not path.exists('tmp/database.db'):
-    import os
-    os.makedirs('tmp', exist_ok=True)
-    with app.app_context():
-        db.create_all()
