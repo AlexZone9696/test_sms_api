@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Админ-панель</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <h2>Пользователи</h2>
+    {% for user in users %}
+        {{ user.username }} | Баланс: {{ user.balance }}$ | TG ID: {{ user.telegram_id }}<br>
+    {% endfor %}
+
+    <h2>История заказов</h2>
+    {% for order in orders %}
+        Пользователь #{{ order.user_id }} | Номер: {{ order.number }} | Статус: {{ order.status }} | Код: {{ order.sms_code }}<br>
+    {% endfor %}
+</body>
+</html>
